@@ -1,0 +1,120 @@
+name: Release latest preview
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-release-latest
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, Win32]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build
+        shell: pwsh
+        run: .\build.ps1 -Platform ${{ matrix.platform }}
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v7
+        with:
+          name: CursorUsageMonitor-${{ matrix.platform }}
+          path: build/${{ matrix.platform }}/Release/CursorUsageMonitor.dll
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish latest
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download DLLs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: CursorUsageMonitor-*
+          path: dist
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          find dist -type f
+          x64_dll=$(find dist/CursorUsageMonitor-x64 -name CursorUsageMonitor.dll -print -quit)
+          win32_dll=$(find dist/CursorUsageMonitor-Win32 -name CursorUsageMonitor.dll -print -quit)
+          test -n "$x64_dll"
+          test -n "$win32_dll"
+          zip -j dist/CursorUsageMonitor-x64.zip "$x64_dll"
+          zip -j dist/CursorUsageMonitor-Win32.zip "$win32_dll"
+          unzip -l dist/CursorUsageMonitor-x64.zip
+          unzip -l dist/CursorUsageMonitor-Win32.zip
+
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          gh release delete latest --yes --cleanup-tag || true
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" || true
+
+          short="${GITHUB_SHA:0:7}"
+          subject="$(git log -1 --pretty=%s)"
+          url="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          b='`'
+
+          cat > release-notes.md <<EOF
+          由 [${short}](${url}) 自动构建的预览版。
+
+          | 文件 | 说明 |
+          | --- | --- |
+          | ${b}CursorUsageMonitor-x64.zip${b} | 64 位 TrafficMonitor |
+          | ${b}CursorUsageMonitor-Win32.zip${b} | 32 位 TrafficMonitor |
+
+          退出 TrafficMonitor，解压后把 ${b}CursorUsageMonitor.dll${b} 放进 ${b}plugins${b} 目录，再启动。位数要和 TrafficMonitor 一致。
+          EOF
+          printf '\n提交说明：%s\n' "$subject" >> release-notes.md
+
+          for attempt in 1 2 3 4 5; do
+            set +e
+            output=$(gh release create latest \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --latest=false \
+              --title "latest" \
+              --target "$GITHUB_SHA" \
+              --notes-file release-notes.md \
+              dist/CursorUsageMonitor-x64.zip \
+              dist/CursorUsageMonitor-Win32.zip 2>&1)
+            status=$?
+            set -e
+            printf '%s\n' "$output"
+            if [[ $status -eq 0 ]]; then
+              exit 0
+            fi
+            if ! grep -Eqi 'already exists|Reference already exists|still being created' <<<"$output"; then
+              exit "$status"
+            fi
+            echo "tag latest is not ready (attempt ${attempt}), retrying"
+            gh release delete latest --yes --cleanup-tag || true
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" || true
+            sleep $((attempt * 5))
+          done
+          exit 1
