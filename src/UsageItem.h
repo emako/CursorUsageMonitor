@@ -32,5 +32,6 @@ private:
     Kind m_kind;
     // Fixed buffer: TrafficMonitor reads the returned pointer on its UI thread while DataRequired updates it.
     wchar_t m_value[64] = L"--";
+    mutable wchar_t m_sample[32] = L"100%";
     std::atomic<float> m_graphValue{ 0.0f };
 };

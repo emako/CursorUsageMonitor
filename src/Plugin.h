@@ -29,6 +29,7 @@ private:
     CUsageItem m_onDemand{ CUsageItem::Kind::OnDemand };
     CUsageItem m_auto{ CUsageItem::Kind::Auto };
     CUsageItem m_api{ CUsageItem::Kind::Api };
+    ITrafficMonitor* m_app = nullptr;
     uint64_t m_shownVersion = 0;
     wchar_t m_tooltip[1024] = L"";
 };

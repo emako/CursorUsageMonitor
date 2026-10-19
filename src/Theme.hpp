@@ -427,7 +427,13 @@ inline BOOL CALLBACK ThemeChild(HWND child, LPARAM param)
     if (_wcsicmp(className, L"Button") == 0)
     {
         // DarkMode_Explorer leaves push buttons light, so draw them ourselves.
+        // Checkboxes keep the explorer theme so the box and caption stay readable.
         const DWORD type = static_cast<DWORD>(GetWindowLongW(child, GWL_STYLE)) & BS_TYPEMASK;
+        if (type == BS_CHECKBOX || type == BS_AUTOCHECKBOX || type == BS_RADIOBUTTON || type == BS_AUTORADIOBUTTON)
+        {
+            SetWindowTheme(child, dark ? L"DarkMode_Explorer" : nullptr, nullptr);
+            return TRUE;
+        }
         if (dark && (type == BS_PUSHBUTTON || type == BS_DEFPUSHBUTTON || type == BS_OWNERDRAW))
         {
             if (type != BS_OWNERDRAW)
@@ -679,6 +685,7 @@ inline bool HandleMessage(HWND dialog, DialogState& state, UINT msg, WPARAM wPar
         result = reinterpret_cast<INT_PTR>(state.field);
         return true;
 
+    case WM_CTLCOLORBTN:
     case WM_CTLCOLORDLG:
     case WM_CTLCOLORSTATIC:
         if (!state.dark || !state.background)

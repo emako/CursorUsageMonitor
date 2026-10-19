@@ -39,7 +39,7 @@
 - 后台线程拉取，`DataRequired` 只读缓存，不会卡 TrafficMonitor。
 - 默认每 5 分钟刷新一次；失败时 1 分钟后重试，并保留上次成功的数值。
 - 右键插件项目 →“立即刷新”。
-- 插件选项（TrafficMonitor →“插件管理”→ 选中本插件 →“选项”）可改刷新间隔（1–1440 分钟），保存在 TrafficMonitor 插件配置目录下的 `CursorUsageMonitor.ini`。
+- 插件选项（TrafficMonitor →“插件管理”→ 选中本插件 →“选项”）可改刷新间隔（1–1440 分钟），以及百分比是否显示小数、是否隐藏百分号、数值和单位之间是否加空格。保存在 TrafficMonitor 插件配置目录下的 `CursorUsageMonitor.ini`。
 
 ## 原理
 
@@ -53,7 +53,7 @@
    - `GET https://cursor.com/api/auth/me`
    - `GET https://cursor.com/api/usage-summary`
 
-不写任何用量数据到磁盘，只有刷新间隔写进 ini。
+不写任何用量数据到磁盘，只有刷新间隔和上面的显示选项写进 ini。
 
 ## 构建
 

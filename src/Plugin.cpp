@@ -1,6 +1,7 @@
 #include "Plugin.h"
 
 #include "DataManager.h"
+#include "Lang.h"
 #include "Text.h"
 #include "Theme.hpp"
 #include "resource.h"
@@ -14,11 +15,6 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 namespace
 {
 constexpr wchar_t kPluginName[] = L"Cursor 用量";
-
-std::wstring Percent(double value)
-{
-    return value < 9.95 ? Format(L"%.1f%%", value) : Format(L"%.0f%%", value);
-}
 
 std::wstring Dollars(double cents)
 {
@@ -93,6 +89,8 @@ constexpr UINT kRefreshOptionsIcon = WM_APP + 2;
 struct OptionsDialogState
 {
     int* minutes = nullptr;
+    DisplayFormat* display = nullptr;
+    const Lang::Text* text = nullptr;
     bool themed = false;
     Theme::DialogState theme;
     HICON smallIcon = nullptr;
@@ -150,14 +148,23 @@ INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
             state->theme.editId = IDC_INTERVAL;
             Theme::Apply(hDlg, state->theme);
         }
-        SetWindowTextW(hDlg, L"Cursor 用量 选项");
-        SetDlgItemTextW(hDlg, IDC_INTERVAL_LABEL, L"刷新间隔（分钟）：");
+        const Lang::Text& text = *state->text;
+        SetWindowTextW(hDlg, text.optionsTitle);
+        SetDlgItemTextW(hDlg, IDC_INTERVAL_LABEL, text.intervalLabel);
         SetDlgItemTextW(hDlg, IDC_INTERVAL_HINT,
-            Format(L"范围 %d–%d，默认 %d；刷新失败时 1 分钟后重试。",
-                DataManager::kMinMinutes, DataManager::kMaxMinutes, DataManager::kDefaultMinutes).c_str());
-        SetDlgItemTextW(hDlg, IDOK, L"确定");
-        SetDlgItemTextW(hDlg, IDCANCEL, L"取消");
+            Format(text.intervalHint, DataManager::kMinMinutes, DataManager::kMaxMinutes, DataManager::kDefaultMinutes).c_str());
+        SetDlgItemTextW(hDlg, IDC_SHOW_DECIMAL, text.showDecimal);
+        SetDlgItemTextW(hDlg, IDC_HIDE_PERCENT, text.hidePercent);
+        SetDlgItemTextW(hDlg, IDC_SEPARATE_SPACE, text.separateSpace);
+        SetDlgItemTextW(hDlg, IDOK, text.ok);
+        SetDlgItemTextW(hDlg, IDCANCEL, text.cancel);
         SetDlgItemInt(hDlg, IDC_INTERVAL, static_cast<UINT>(*state->minutes), FALSE);
+        if (state->display)
+        {
+            CheckDlgButton(hDlg, IDC_SHOW_DECIMAL, state->display->showDecimal ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hDlg, IDC_HIDE_PERCENT, state->display->hidePercent ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hDlg, IDC_SEPARATE_SPACE, state->display->separateWithSpace ? BST_CHECKED : BST_UNCHECKED);
+        }
         SendDlgItemMessageW(hDlg, IDC_INTERVAL, EM_LIMITTEXT, 4, 0);
         SetOptionsIcon(hDlg, *state);
         if (state->themed)
@@ -176,14 +183,21 @@ INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
             const UINT value = GetDlgItemInt(hDlg, IDC_INTERVAL, &ok, FALSE);
             if (!ok || value < static_cast<UINT>(DataManager::kMinMinutes) || value > static_cast<UINT>(DataManager::kMaxMinutes))
             {
+                const Lang::Text& text = state && state->text ? *state->text : Lang::Get(Lang::Id::ZhCn);
                 MessageBoxW(hDlg,
-                    Format(L"请输入 %d 到 %d 之间的整数。", DataManager::kMinMinutes, DataManager::kMaxMinutes).c_str(),
-                    kPluginName, MB_ICONWARNING | MB_OK);
+                    Format(text.invalidInterval, DataManager::kMinMinutes, DataManager::kMaxMinutes).c_str(),
+                    text.messageTitle, MB_ICONWARNING | MB_OK);
                 SetFocus(GetDlgItem(hDlg, IDC_INTERVAL));
                 return TRUE;
             }
             if (state && state->minutes)
                 *state->minutes = static_cast<int>(value);
+            if (state && state->display)
+            {
+                state->display->showDecimal = IsDlgButtonChecked(hDlg, IDC_SHOW_DECIMAL) == BST_CHECKED;
+                state->display->hidePercent = IsDlgButtonChecked(hDlg, IDC_HIDE_PERCENT) == BST_CHECKED;
+                state->display->separateWithSpace = IsDlgButtonChecked(hDlg, IDC_SEPARATE_SPACE) == BST_CHECKED;
+            }
             EndDialog(hDlg, IDOK);
             return TRUE;
         }
@@ -252,14 +266,15 @@ void CCursorUsagePlugin::DataRequired()
         return;
 
     const auto& info = snapshot.info;
-    auto setPercent = [](CUsageItem& item, std::optional<double> value) {
+    const DisplayFormat display = data.Display();
+    auto setPercent = [&](CUsageItem& item, std::optional<double> value) {
         if (!value)
         {
             item.SetValue(L"--");
             return;
         }
         const double percent = std::clamp(*value, 0.0, 100.0);
-        item.SetValue(Percent(percent).c_str(), static_cast<float>(percent / 100.0));
+        item.SetValue(FormatPercent(percent, display).c_str(), static_cast<float>(percent / 100.0));
     };
 
     if (info.hasPlan)
@@ -301,10 +316,15 @@ const wchar_t* CCursorUsagePlugin::GetInfo(PluginInfoIndex index)
 ITMPlugin::OptionReturn CCursorUsagePlugin::ShowOptionsDialog(void* hParent)
 {
     auto& data = DataManager::Instance();
-    const int before = data.RefreshMinutes();
-    int minutes = before;
+    const int beforeMinutes = data.RefreshMinutes();
+    const DisplayFormat beforeDisplay = data.Display();
+    int minutes = beforeMinutes;
+    DisplayFormat display = beforeDisplay;
+    const Lang::Text& text = Lang::Get(Lang::FromLanguageId(m_app ? m_app->GetLanguageId() : 0));
     OptionsDialogState state;
     state.minutes = &minutes;
+    state.display = &display;
+    state.text = &text;
     state.themed = !IsOfficialTrafficMonitor(static_cast<HWND>(hParent));
     const INT_PTR result = [&] {
         if (!state.themed)
@@ -317,15 +337,23 @@ ITMPlugin::OptionReturn CCursorUsagePlugin::ShowOptionsDialog(void* hParent)
             static_cast<HWND>(hParent), OptionsDialogProc, reinterpret_cast<LPARAM>(&state));
     }();
     DestroyOptionsIcon(state);
-    if (result != IDOK || minutes == before)
+    if (result != IDOK)
         return OR_OPTION_UNCHANGED;
-    data.SetRefreshMinutes(minutes);
+    const bool minutesChanged = minutes != beforeMinutes;
+    const bool displayChanged = !SameDisplay(display, beforeDisplay);
+    if (!minutesChanged && !displayChanged)
+        return OR_OPTION_UNCHANGED;
+    if (minutesChanged)
+        data.SetRefreshMinutes(minutes);
+    if (displayChanged)
+        data.SetDisplay(display);
     return OR_OPTION_CHANGED;
 }
 
 const wchar_t* CCursorUsagePlugin::GetTooltipInfo()
 {
     const auto snapshot = DataManager::Instance().Snapshot();
+    const DisplayFormat display = DataManager::Instance().Display();
     std::wstring tip = kPluginName;
 
     if (snapshot.hasData)
@@ -339,11 +367,11 @@ const wchar_t* CCursorUsagePlugin::GetTooltipInfo()
         }
         if (info.hasPlan)
         {
-            tip += L"\r\n套餐占用：" + Format(L"%.1f%%", info.totalPercent);
+            tip += L"\r\n套餐占用：" + FormatPercent(info.totalPercent, display);
             if (info.autoPercent || info.apiPercent)
             {
-                tip += Format(L"（Auto %.1f%% · API %.1f%%）",
-                    info.autoPercent.value_or(0.0), info.apiPercent.value_or(0.0));
+                tip += L"（Auto " + FormatPercent(info.autoPercent.value_or(0.0), display)
+                    + L" · API " + FormatPercent(info.apiPercent.value_or(0.0), display) + L"）";
             }
             tip += L"\r\n套餐已用：" + Dollars(info.planUsedCents);
             if (info.planLimitCents && *info.planLimitCents > 0)
@@ -414,6 +442,7 @@ void CCursorUsagePlugin::OnPluginCommand(int command_index, void*, void*)
 
 void CCursorUsagePlugin::OnInitialize(ITrafficMonitor* pApp)
 {
+    m_app = pApp;
     if (!pApp)
         return;
     if (const wchar_t* dir = pApp->GetPluginConfigDir())

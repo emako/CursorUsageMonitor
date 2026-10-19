@@ -10,10 +10,41 @@ namespace
 {
 constexpr wchar_t kIniSection[] = L"config";
 constexpr wchar_t kIniRefreshKey[] = L"refresh_minutes";
+constexpr wchar_t kShowDecimalKey[] = L"show_decimal";
+constexpr wchar_t kHidePercentKey[] = L"hide_percent";
+constexpr wchar_t kSeparateKey[] = L"separate_value_unit_with_space";
 
 int ClampMinutes(int minutes)
 {
     return std::clamp(minutes, DataManager::kMinMinutes, DataManager::kMaxMinutes);
+}
+
+bool ReadBool(const wchar_t* key, bool fallback, const std::wstring& path)
+{
+    return GetPrivateProfileIntW(kIniSection, key, fallback ? 1 : 0, path.c_str()) != 0;
+}
+
+DisplayFormat ReadDisplay(const std::wstring& path)
+{
+    DisplayFormat format;
+    format.showDecimal = ReadBool(kShowDecimalKey, false, path);
+    format.hidePercent = ReadBool(kHidePercentKey, false, path);
+    format.separateWithSpace = ReadBool(kSeparateKey, false, path);
+    return format;
+}
+
+void WriteBool(const wchar_t* key, bool value, const std::wstring& path)
+{
+    WritePrivateProfileStringW(kIniSection, key, value ? L"1" : L"0", path.c_str());
+}
+
+void WriteDisplay(const std::wstring& path, const DisplayFormat& format)
+{
+    if (path.empty())
+        return;
+    WriteBool(kShowDecimalKey, format.showDecimal, path);
+    WriteBool(kHidePercentKey, format.hidePercent, path);
+    WriteBool(kSeparateKey, format.separateWithSpace, path);
 }
 } // namespace
 
@@ -35,6 +66,11 @@ void DataManager::SetConfigDir(const std::wstring& dir)
     m_iniPath += L"CursorUsageMonitor.ini";
     m_refreshMinutes = ClampMinutes(static_cast<int>(
         GetPrivateProfileIntW(kIniSection, kIniRefreshKey, kDefaultMinutes, m_iniPath.c_str())));
+    const DisplayFormat display = ReadDisplay(m_iniPath);
+    const bool displayChanged = !SameDisplay(display, m_display);
+    m_display = display;
+    if (displayChanged && m_snapshot.hasData)
+        ++m_snapshot.version;
 }
 
 int DataManager::RefreshMinutes() const
@@ -52,6 +88,23 @@ void DataManager::SetRefreshMinutes(int minutes)
         WritePrivateProfileStringW(kIniSection, kIniRefreshKey,
             std::to_wstring(m_refreshMinutes).c_str(), m_iniPath.c_str());
     }
+}
+
+DisplayFormat DataManager::Display() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_display;
+}
+
+void DataManager::SetDisplay(const DisplayFormat& format)
+{
+    std::lock_guard lock(m_mutex);
+    if (SameDisplay(format, m_display))
+        return;
+    m_display = format;
+    WriteDisplay(m_iniPath, m_display);
+    if (m_snapshot.hasData)
+        ++m_snapshot.version;
 }
 
 ULONGLONG DataManager::DelayMs() const

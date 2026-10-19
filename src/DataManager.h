@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Display.h"
 #include "UsageClient.h"
 
 #include <windows.h>
@@ -32,6 +33,8 @@ public:
     void SetConfigDir(const std::wstring& dir);
     int RefreshMinutes() const;
     void SetRefreshMinutes(int minutes);
+    DisplayFormat Display() const;
+    void SetDisplay(const DisplayFormat& format);
 
     // Cheap; called every DataRequired. Starts a background refresh when one is due.
     void Tick();
@@ -49,6 +52,7 @@ private:
     UsageSnapshot m_snapshot;
     std::wstring m_iniPath;
     int m_refreshMinutes = kDefaultMinutes;
+    DisplayFormat m_display;
     bool m_busy = false;
     bool m_attempted = false;
     bool m_lastFailed = false;

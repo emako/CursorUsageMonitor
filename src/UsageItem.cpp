@@ -1,5 +1,7 @@
 #include "UsageItem.h"
 
+#include "DataManager.h"
+
 #include <cwchar>
 
 const wchar_t* CUsageItem::GetItemName() const
@@ -68,7 +70,11 @@ const wchar_t* CUsageItem::GetItemValueSampleText() const
     case Kind::Plan:
     case Kind::Auto:
     case Kind::Api:
-        return L"100%";
+    {
+        const auto text = FormatPercent(100.0, DataManager::Instance().Display());
+        wcsncpy_s(m_sample, text.c_str(), _TRUNCATE);
+        return m_sample;
+    }
     case Kind::Spend:
         return L"$999.99/$999";
     case Kind::OnDemand:
