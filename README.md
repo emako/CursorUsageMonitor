@@ -9,13 +9,9 @@
 </p>
 
 <p align="center">
-  <code>套餐: 27%</code>
-  &nbsp;&nbsp;<code>已用: $15.16/$20</code>
-  &nbsp;&nbsp;<code>按量: $0.00</code>
-  &nbsp;&nbsp;<code>Auto: 24%</code>
-  &nbsp;&nbsp;<code>API: 64%</code>
+  <img src="branding/screenshot_001.png" alt="任务栏中的套餐、按量、Auto 和 API" width="640" />
   <br />
-  <sub>任务栏示例</sub>
+  <sub>任务栏</sub>
 </p>
 
 纯 C++ 实现，编出来只有一个 `CursorUsageMonitor.dll`。
