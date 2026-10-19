@@ -30,7 +30,7 @@
 | Cursor Auto 占用 | `CursorAuto` | `Auto:` | `24%` | `plan.autoPercentUsed`，任务栏可画占用条 |
 | Cursor API 占用 | `CursorApi` | `API:` | `64%` | `plan.apiPercentUsed`，任务栏可画占用条 |
 
-还没拿到数据时显示 `--`。
+还没拿到数据时显示 `--`。下表的名称和标签是简体中文；宿主换成其他语言时，插件会显示对应译文。
 
 鼠标悬停提示包含：账号与会员类型、Auto/API 占用、赠送额度已用、账期结束（本地时间与剩余天数）、上次更新时间、刷新状态和失败原因。
 
@@ -40,6 +40,7 @@
 - 默认每 5 分钟刷新一次；失败时 1 分钟后重试，并保留上次成功的数值。
 - 右键插件项目 →“立即刷新”。
 - 插件选项（TrafficMonitor →“插件管理”→ 选中本插件 →“选项”）可改刷新间隔（1–1440 分钟），以及百分比是否显示小数、是否隐藏百分号、数值和单位之间是否加空格。保存在 TrafficMonitor 插件配置目录下的 `CursorUsageMonitor.ini`。
+- 界面语言跟随宿主的 `GetLanguageId()`，与 TrafficBar 相同的 19 种语言：德语、英语、拉丁美洲西班牙语、西班牙语（西班牙）、法语、希伯来语、匈牙利语、意大利语、日语、韩语、波兰语、巴西葡萄牙语、俄语、斯洛文尼亚语、泰语、土耳其语、越南语、简体中文、繁体中文。繁体中文覆盖台湾、香港、澳门，其余中文用简体；西班牙用 es-ES，其余西班牙语用 es-419；对不上时用英语。
 
 ## 原理
 
@@ -83,6 +84,7 @@ src/Session.cpp             登录态发现、JWT、Cookie
 src/UsageClient.cpp         WinHTTP 请求与 usage-summary 解析
 src/DataManager.cpp         后台刷新、缓存、ini
 src/UsageItem.cpp           五项显示项
+src/Lang.cpp                与 TrafficBar 相同的 19 种界面语言
 src/Plugin.cpp              ITMPlugin、提示、命令、选项对话框、TMPluginGetInstance
 third_party/                nlohmann/json 3.12.0、SQLite 3.54.0 amalgamation
 ```

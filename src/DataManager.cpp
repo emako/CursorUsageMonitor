@@ -1,5 +1,6 @@
 #include "DataManager.h"
 
+#include "Lang.h"
 #include "Text.h"
 
 #include <algorithm>
@@ -138,7 +139,7 @@ void DataManager::Tick()
         m_lastFailed = true;
         m_lastFinished = GetTickCount64();
         m_snapshot.refreshing = false;
-        m_snapshot.lastError = L"无法启动后台刷新线程";
+        m_snapshot.lastError = Lang::Current().errThread;
         ++m_snapshot.version;
     }
 }
@@ -161,11 +162,11 @@ void DataManager::Run()
     }
     catch (const std::exception& ex)
     {
-        result.error = L"采集出错：" + Utf8ToWide(ex.what());
+        result.error = Lang::Current().errCollectPrefix + Utf8ToWide(ex.what());
     }
     catch (...)
     {
-        result.error = L"采集出错";
+        result.error = Lang::Current().errCollect;
     }
 
     std::lock_guard lock(m_mutex);

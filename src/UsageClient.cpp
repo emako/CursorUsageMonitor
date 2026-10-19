@@ -1,5 +1,6 @@
 #include "UsageClient.h"
 
+#include "Lang.h"
 #include "Session.h"
 #include "Text.h"
 
@@ -134,20 +135,21 @@ private:
 
 std::wstring DescribeNetworkError(DWORD code)
 {
+    const auto& text = Lang::Current();
     switch (code)
     {
     case ERROR_WINHTTP_TIMEOUT:
-        return L"连接 cursor.com 超时";
+        return text.errTimeout;
     case ERROR_WINHTTP_NAME_NOT_RESOLVED:
-        return L"无法解析 cursor.com，请检查网络或代理";
+        return text.errDns;
     case ERROR_WINHTTP_CANNOT_CONNECT:
-        return L"无法连接 cursor.com，请检查网络或代理";
+        return text.errConnect;
     case ERROR_WINHTTP_CONNECTION_ERROR:
-        return L"与 cursor.com 的连接被中断";
+        return text.errInterrupted;
     case ERROR_WINHTTP_SECURE_FAILURE:
-        return L"与 cursor.com 建立安全连接失败";
+        return text.errTls;
     default:
-        return Format(L"网络错误 %lu", code);
+        return Format(text.errNetwork, code);
     }
 }
 
@@ -163,12 +165,12 @@ bool Check(const HttpResponse& response, const wchar_t* path, std::wstring& erro
     }
     if (response.status == 401 || response.status == 403)
     {
-        error = Format(L"登录态无效或已过期（HTTP %lu），请在 Cursor 里重新登录", response.status);
+        error = Format(Lang::Current().errAuthHttp, response.status);
         return false;
     }
     if (response.status < 200 || response.status >= 300)
     {
-        error = Format(L"cursor.com 返回 HTTP %lu（%s）", response.status, path);
+        error = Format(Lang::Current().errHttp, response.status, path);
         return false;
     }
     return true;
@@ -301,7 +303,7 @@ FetchResult FetchUsage()
     const auto sessions = DiscoverSessions();
     if (sessions.empty())
     {
-        result.error = L"未找到 Cursor 登录态，请先在本机登录 Cursor";
+        result.error = Lang::Current().errNoSession;
         return result;
     }
 
@@ -326,7 +328,7 @@ FetchResult FetchUsage()
         const auto meJson = json::parse(me.body, nullptr, false);
         if (!meJson.is_object())
         {
-            lastError = L"登录态无效或已过期，请在 Cursor 里重新登录";
+            lastError = Lang::Current().errAuthInvalid;
             continue;
         }
 
@@ -340,7 +342,7 @@ FetchResult FetchUsage()
         const auto summaryJson = json::parse(summary.body, nullptr, false);
         if (!summaryJson.is_object())
         {
-            lastError = L"usage-summary 返回的内容无法解析";
+            lastError = Lang::Current().errParse;
             continue;
         }
 
@@ -357,6 +359,6 @@ FetchResult FetchUsage()
         return result;
     }
 
-    result.error = anyLive ? lastError : L"本机 Cursor 登录态已过期，请在 Cursor 里重新登录";
+    result.error = anyLive ? lastError : Lang::Current().errExpired;
     return result;
 }

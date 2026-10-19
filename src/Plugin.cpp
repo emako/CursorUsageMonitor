@@ -14,7 +14,16 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 namespace
 {
-constexpr wchar_t kPluginName[] = L"Cursor 用量";
+struct LanguageBinder
+{
+    LanguageBinder()
+    {
+        Lang::SetLanguageProvider([]() -> unsigned short {
+            return CCursorUsagePlugin::Instance().LanguageId();
+        });
+    }
+};
+[[maybe_unused]] LanguageBinder g_languageBinder;
 
 std::wstring Dollars(double cents)
 {
@@ -142,6 +151,10 @@ INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
     {
         auto* state = reinterpret_cast<OptionsDialogState*>(lParam);
         SetWindowLongPtrW(hDlg, DWLP_USER, lParam);
+        if (state->text && state->text->rtl)
+        {
+            SetWindowLongPtrW(hDlg, GWL_EXSTYLE, GetWindowLongPtrW(hDlg, GWL_EXSTYLE) | WS_EX_LAYOUTRTL);
+        }
         if (state->themed)
         {
             state->theme.hintId = IDC_INTERVAL_HINT;
@@ -167,11 +180,9 @@ INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
         }
         SendDlgItemMessageW(hDlg, IDC_INTERVAL, EM_LIMITTEXT, 4, 0);
         SetOptionsIcon(hDlg, *state);
+        Theme::ApplyFont(hDlg, state->theme, state->text ? state->text->font : nullptr);
         if (state->themed)
-        {
-            Theme::ApplyFont(hDlg, state->theme);
             PostMessageW(hDlg, Theme::kApplyFrameMessage, 0, 0);
-        }
         return TRUE;
     }
 
@@ -183,10 +194,10 @@ INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
             const UINT value = GetDlgItemInt(hDlg, IDC_INTERVAL, &ok, FALSE);
             if (!ok || value < static_cast<UINT>(DataManager::kMinMinutes) || value > static_cast<UINT>(DataManager::kMaxMinutes))
             {
-                const Lang::Text& text = state && state->text ? *state->text : Lang::Get(Lang::Id::ZhCn);
+                const Lang::Text& text = state && state->text ? *state->text : Lang::Current();
                 MessageBoxW(hDlg,
                     Format(text.invalidInterval, DataManager::kMinMinutes, DataManager::kMaxMinutes).c_str(),
-                    text.messageTitle, MB_ICONWARNING | MB_OK);
+                    text.name, MB_ICONWARNING | MB_OK);
                 SetFocus(GetDlgItem(hDlg, IDC_INTERVAL));
                 return TRUE;
             }
@@ -297,9 +308,9 @@ const wchar_t* CCursorUsagePlugin::GetInfo(PluginInfoIndex index)
     switch (index)
     {
     case TMI_NAME:
-        return kPluginName;
+        return Lang::Current().name;
     case TMI_DESCRIPTION:
-        return L"在任务栏显示本机 Cursor 账号的套餐占用、已用金额和按量费用。";
+        return Lang::Current().description;
     case TMI_AUTHOR:
         return L"ema";
     case TMI_COPYRIGHT:
@@ -352,67 +363,102 @@ ITMPlugin::OptionReturn CCursorUsagePlugin::ShowOptionsDialog(void* hParent)
 
 const wchar_t* CCursorUsagePlugin::GetTooltipInfo()
 {
+    const auto& text = Lang::Current();
     const auto snapshot = DataManager::Instance().Snapshot();
     const DisplayFormat display = DataManager::Instance().Display();
-    std::wstring tip = kPluginName;
+    std::wstring tip = text.name;
 
     if (snapshot.hasData)
     {
         const auto& info = snapshot.info;
         if (!info.email.empty())
         {
-            tip += L"\r\n账号：" + info.email;
+            tip += L"\r\n";
+            tip += text.account;
+            tip += info.email;
             if (!info.membership.empty())
-                tip += L"（" + info.membership + L"）";
+            {
+                tip += text.membershipOpen;
+                tip += info.membership;
+                tip += text.membershipClose;
+            }
         }
         if (info.hasPlan)
         {
-            tip += L"\r\n套餐占用：" + FormatPercent(info.totalPercent, display);
+            tip += L"\r\n";
+            tip += text.planUsage;
+            tip += FormatPercent(info.totalPercent, display);
             if (info.autoPercent || info.apiPercent)
             {
-                tip += L"（Auto " + FormatPercent(info.autoPercent.value_or(0.0), display)
-                    + L" · API " + FormatPercent(info.apiPercent.value_or(0.0), display) + L"）";
+                tip += text.detailOpen;
+                tip += FormatPercent(info.autoPercent.value_or(0.0), display);
+                tip += text.detailMiddle;
+                tip += FormatPercent(info.apiPercent.value_or(0.0), display);
+                tip += text.detailClose;
             }
-            tip += L"\r\n套餐已用：" + Dollars(info.planUsedCents);
+            tip += L"\r\n";
+            tip += text.planUsed;
+            tip += Dollars(info.planUsedCents);
             if (info.planLimitCents && *info.planLimitCents > 0)
                 tip += L" / " + Dollars(*info.planLimitCents);
             if (info.planBonusCents && *info.planBonusCents > 0)
-                tip += L"\r\n赠送额度已用：" + Dollars(*info.planBonusCents);
+            {
+                tip += L"\r\n";
+                tip += text.bonusUsed;
+                tip += Dollars(*info.planBonusCents);
+            }
         }
         if (info.onDemandEnabled)
         {
-            tip += L"\r\n按量费用：" + Dollars(info.onDemandUsedCents);
+            tip += L"\r\n";
+            tip += text.onDemand;
+            tip += Dollars(info.onDemandUsedCents);
             if (info.onDemandLimitCents)
                 tip += L" / " + Dollars(*info.onDemandLimitCents);
             if (info.onDemandIsTeam)
-                tip += L"（团队）";
+                tip += text.team;
         }
         else
         {
-            tip += L"\r\n按量费用：未开启";
+            tip += L"\r\n";
+            tip += text.onDemandOff;
         }
         if (info.cycleEndUnix)
         {
             const auto end = LocalTime(*info.cycleEndUnix);
             if (!end.empty())
             {
-                tip += L"\r\n账期结束：" + end;
+                tip += L"\r\n";
+                tip += text.cycleEnd;
+                tip += end;
                 const long long secondsLeft = *info.cycleEndUnix - static_cast<long long>(std::time(nullptr));
                 if (secondsLeft > 0)
-                    tip += Format(L"（剩 %lld 天）", (secondsLeft + 86399) / 86400);
+                {
+                    const long long days = (secondsLeft + 86399) / 86400;
+                    tip += Format(days == 1 ? text.dayLeft : text.daysLeft, days);
+                }
             }
         }
         if (snapshot.lastSuccess)
         {
             const auto& t = *snapshot.lastSuccess;
-            tip += Format(L"\r\n更新时间：%02u:%02u:%02u", t.wHour, t.wMinute, t.wSecond);
+            tip += L"\r\n";
+            tip += Format(text.updated, t.wHour, t.wMinute, t.wSecond);
         }
     }
 
     if (snapshot.refreshing)
-        tip += L"\r\n正在刷新…";
+    {
+        tip += L"\r\n";
+        tip += text.refreshing;
+    }
     if (!snapshot.lastError.empty())
-        tip += (snapshot.hasData ? L"\r\n上次刷新失败：" : L"\r\n") + snapshot.lastError;
+    {
+        tip += L"\r\n";
+        if (snapshot.hasData)
+            tip += text.refreshFailed;
+        tip += snapshot.lastError;
+    }
 
     wcsncpy_s(m_tooltip, tip.c_str(), _TRUNCATE);
     return m_tooltip;
@@ -431,13 +477,18 @@ int CCursorUsagePlugin::GetCommandCount()
 
 const wchar_t* CCursorUsagePlugin::GetCommandName(int command_index)
 {
-    return command_index == 0 ? L"立即刷新" : nullptr;
+    return command_index == 0 ? Lang::Current().refreshNow : nullptr;
 }
 
 void CCursorUsagePlugin::OnPluginCommand(int command_index, void*, void*)
 {
     if (command_index == 0)
         DataManager::Instance().RefreshNow();
+}
+
+unsigned short CCursorUsagePlugin::LanguageId() const
+{
+    return m_app ? m_app->GetLanguageId() : 0;
 }
 
 void CCursorUsagePlugin::OnInitialize(ITrafficMonitor* pApp)

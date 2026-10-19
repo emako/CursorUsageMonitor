@@ -1,23 +1,25 @@
 #include "UsageItem.h"
 
 #include "DataManager.h"
+#include "Lang.h"
 
 #include <cwchar>
 
 const wchar_t* CUsageItem::GetItemName() const
 {
+    const auto& text = Lang::Current();
     switch (m_kind)
     {
     case Kind::Plan:
-        return L"Cursor 套餐占用";
+        return text.itemPlan;
     case Kind::Spend:
-        return L"Cursor 套餐已用";
+        return text.itemSpend;
     case Kind::OnDemand:
-        return L"Cursor 按量费用";
+        return text.itemOnDemand;
     case Kind::Auto:
-        return L"Cursor Auto 占用";
+        return text.itemAuto;
     case Kind::Api:
-        return L"Cursor API 占用";
+        return text.itemApi;
     }
     return L"";
 }
@@ -42,18 +44,19 @@ const wchar_t* CUsageItem::GetItemId() const
 
 const wchar_t* CUsageItem::GetItemLableText() const
 {
+    const auto& text = Lang::Current();
     switch (m_kind)
     {
     case Kind::Plan:
-        return L"套餐: ";
+        return text.labelPlan;
     case Kind::Spend:
-        return L"已用: ";
+        return text.labelSpend;
     case Kind::OnDemand:
-        return L"按量: ";
+        return text.labelOnDemand;
     case Kind::Auto:
-        return L"Auto: ";
+        return text.labelAuto;
     case Kind::Api:
-        return L"API: ";
+        return text.labelApi;
     }
     return L"";
 }

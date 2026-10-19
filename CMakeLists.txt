@@ -15,6 +15,7 @@ add_library(CursorUsageMonitor SHARED
     src/UsageClient.cpp
     src/DataManager.cpp
     src/UsageItem.cpp
+    src/Lang.cpp
     src/Plugin.cpp
     src/Theme.hpp
     src/CursorUsageMonitor.rc

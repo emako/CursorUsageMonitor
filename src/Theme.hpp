@@ -608,7 +608,7 @@ inline void Apply(HWND dialog, DialogState& state)
     }
 }
 
-inline void ApplyFont(HWND dialog, DialogState& state)
+inline void ApplyFont(HWND dialog, DialogState& state, const wchar_t* face = nullptr)
 {
     if (!state.font)
     {
@@ -620,7 +620,7 @@ inline void ApplyFont(HWND dialog, DialogState& state)
         font.lfWeight = FW_NORMAL;
         font.lfQuality = CLEARTYPE_QUALITY;
         font.lfCharSet = DEFAULT_CHARSET;
-        wcscpy_s(font.lfFaceName, L"Segoe UI");
+        wcscpy_s(font.lfFaceName, face && *face ? face : L"Segoe UI");
         state.font = CreateFontIndirectW(&font);
     }
     if (!state.font)
