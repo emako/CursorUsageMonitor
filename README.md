@@ -9,9 +9,13 @@
 </p>
 
 <p align="center">
-  <img src="branding/screenshot_001.png" alt="任务栏中的套餐、按量、Auto 和 API" width="640" />
+  <code>套餐: 27%</code>
+  &nbsp;&nbsp;<code>已用: $15.16/$20</code>
+  &nbsp;&nbsp;<code>按量: $0.00</code>
+  &nbsp;&nbsp;<code>Auto: 24%</code>
+  &nbsp;&nbsp;<code>API: 64%</code>
   <br />
-  <sub>任务栏</sub>
+  <sub>任务栏示例</sub>
 </p>
 
 纯 C++ 实现，编出来只有一个 `CursorUsageMonitor.dll`。
@@ -29,6 +33,12 @@
 还没拿到数据时显示 `--`。下表的名称和标签是简体中文；宿主换成其他语言时，插件会显示对应译文。
 
 鼠标悬停提示包含：账号与会员类型、Auto/API 占用、赠送额度已用、账期结束（本地时间与剩余天数）、上次更新时间、刷新状态和失败原因。
+
+## 截图
+
+<img src="branding/screenshot_001.png" alt="screenshot_001" width="640" />
+
+<img src="branding/screenshot_002.png" alt="screenshot_002" width="640" />
 
 ## 刷新
 
