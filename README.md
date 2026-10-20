@@ -100,3 +100,7 @@ third_party/                nlohmann/json 3.12.0、SQLite 3.54.0 amalgamation
 - `PluginInterface.h`：来自 [zhongyang219/TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor)
 - [nlohmann/json](https://github.com/nlohmann/json)：MIT
 - [SQLite](https://www.sqlite.org/)：Public Domain
+
+## 许可
+
+[MIT](LICENSE)
