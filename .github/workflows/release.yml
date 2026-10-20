@@ -89,11 +89,11 @@ jobs:
           test -n "$win32_dll"
           test -n "$arm64ec_dll"
           zip -j dist/CursorUsageMonitor-x64.zip "$x64_dll"
-          zip -j dist/CursorUsageMonitor-Win32.zip "$win32_dll"
-          zip -j dist/CursorUsageMonitor-ARM64EC.zip "$arm64ec_dll"
+          zip -j dist/CursorUsageMonitor-x86.zip "$win32_dll"
+          zip -j dist/CursorUsageMonitor-arm64ec.zip "$arm64ec_dll"
           unzip -l dist/CursorUsageMonitor-x64.zip
-          unzip -l dist/CursorUsageMonitor-Win32.zip
-          unzip -l dist/CursorUsageMonitor-ARM64EC.zip
+          unzip -l dist/CursorUsageMonitor-x86.zip
+          unzip -l dist/CursorUsageMonitor-arm64ec.zip
 
       - name: Publish release
         env:
@@ -112,11 +112,13 @@ jobs:
           cat > release-notes.md <<EOF
           由 [${short}](${url}) 自动构建。
 
+          同时兼容 [emako/TrafficBar](https://github.com/emako/TrafficBar) 和 [zhongyang219/TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor)。
+
           | 文件 | 说明 |
           | --- | --- |
           | ${b}CursorUsageMonitor-x64.zip${b} | 64 位 TrafficMonitor |
-          | ${b}CursorUsageMonitor-Win32.zip${b} | 32 位 TrafficMonitor |
-          | ${b}CursorUsageMonitor-ARM64EC.zip${b} | ARM64EC TrafficMonitor |
+          | ${b}CursorUsageMonitor-x86.zip${b} | 32 位 TrafficMonitor |
+          | ${b}CursorUsageMonitor-arm64ec.zip${b} | ARM64EC TrafficMonitor |
 
           退出 TrafficMonitor，解压后把 ${b}CursorUsageMonitor.dll${b} 放进 ${b}plugins${b} 目录，再启动。位数要和 TrafficMonitor 一致。
           EOF
@@ -130,8 +132,8 @@ jobs:
               --target "$GITHUB_SHA" \
               --notes-file release-notes.md \
               dist/CursorUsageMonitor-x64.zip \
-              dist/CursorUsageMonitor-Win32.zip \
-              dist/CursorUsageMonitor-ARM64EC.zip 2>&1)
+              dist/CursorUsageMonitor-x86.zip \
+              dist/CursorUsageMonitor-arm64ec.zip 2>&1)
             status=$?
             set -e
             printf '%s\n' "$output"
