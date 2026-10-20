@@ -11,8 +11,8 @@ param(
     [ValidateSet('Release', 'Debug')]
     [string]$Configuration = 'Release',
 
-    # Must match the TrafficMonitor build: x64 for the 64-bit release, Win32 for the 32-bit one.
-    [ValidateSet('x64', 'Win32')]
+    # Must match the TrafficMonitor build: x64, Win32, or ARM64EC.
+    [ValidateSet('x64', 'Win32', 'ARM64EC')]
     [string]$Platform = 'x64',
 
     # Optional TrafficMonitor plugins folder; the built DLL is copied there.
@@ -29,9 +29,15 @@ if (-not (Test-Path $vswhere)) {
 }
 
 $vcComponent = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+if ($Platform -eq 'ARM64EC') {
+    $vcComponent = 'Microsoft.VisualStudio.Component.VC.Tools.ARM64EC'
+}
 $vs = & $vswhere -latest -products * -requires $vcComponent -property installationPath -utf8
 $vsVersion = & $vswhere -latest -products * -requires $vcComponent -property installationVersion -utf8
 if (-not $vs) {
+    if ($Platform -eq 'ARM64EC') {
+        throw 'No Visual Studio install with the ARM64EC toolset was found. Add "MSVC ARM64/ARM64EC build tools" (Microsoft.VisualStudio.Component.VC.Tools.ARM64EC).'
+    }
     throw 'No Visual Studio install with the MSVC toolset was found. Add the "Desktop development with C++" workload.'
 }
 

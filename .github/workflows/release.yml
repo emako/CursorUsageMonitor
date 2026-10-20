@@ -20,10 +20,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [x64, Win32]
+        platform: [x64, Win32, ARM64EC]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Install ARM64EC toolset
+        if: matrix.platform == 'ARM64EC'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath -utf8
+          if (-not $vs) { throw 'Visual Studio with the MSVC toolset was not found.' }
+          $hasArm64Ec = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64EC -property installationPath -utf8
+          if ($hasArm64Ec) {
+            Write-Host "ARM64EC toolset already installed: $hasArm64Ec"
+            exit 0
+          }
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $args = @(
+            'modify',
+            '--installPath', $vs.Trim(),
+            '--add', 'Microsoft.VisualStudio.Component.VC.Tools.ARM64EC',
+            '--quiet', '--norestart', '--wait'
+          )
+          Write-Host "Installing ARM64EC toolset into $($vs.Trim())"
+          $proc = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+          if ($proc.ExitCode -notin 0, 3010) {
+            throw "vs_installer exited $($proc.ExitCode)"
+          }
 
       - name: Build
         shell: pwsh
@@ -59,12 +84,16 @@ jobs:
           find dist -type f
           x64_dll=$(find dist/CursorUsageMonitor-x64 -name CursorUsageMonitor.dll -print -quit)
           win32_dll=$(find dist/CursorUsageMonitor-Win32 -name CursorUsageMonitor.dll -print -quit)
+          arm64ec_dll=$(find dist/CursorUsageMonitor-ARM64EC -name CursorUsageMonitor.dll -print -quit)
           test -n "$x64_dll"
           test -n "$win32_dll"
+          test -n "$arm64ec_dll"
           zip -j dist/CursorUsageMonitor-x64.zip "$x64_dll"
           zip -j dist/CursorUsageMonitor-Win32.zip "$win32_dll"
+          zip -j dist/CursorUsageMonitor-ARM64EC.zip "$arm64ec_dll"
           unzip -l dist/CursorUsageMonitor-x64.zip
           unzip -l dist/CursorUsageMonitor-Win32.zip
+          unzip -l dist/CursorUsageMonitor-ARM64EC.zip
 
       - name: Publish preview release
         env:
@@ -87,6 +116,7 @@ jobs:
           | --- | --- |
           | ${b}CursorUsageMonitor-x64.zip${b} | 64 位 TrafficMonitor |
           | ${b}CursorUsageMonitor-Win32.zip${b} | 32 位 TrafficMonitor |
+          | ${b}CursorUsageMonitor-ARM64EC.zip${b} | ARM64EC TrafficMonitor |
 
           退出 TrafficMonitor，解压后把 ${b}CursorUsageMonitor.dll${b} 放进 ${b}plugins${b} 目录，再启动。位数要和 TrafficMonitor 一致。
           EOF
@@ -102,7 +132,8 @@ jobs:
               --target "$GITHUB_SHA" \
               --notes-file release-notes.md \
               dist/CursorUsageMonitor-x64.zip \
-              dist/CursorUsageMonitor-Win32.zip 2>&1)
+              dist/CursorUsageMonitor-Win32.zip \
+              dist/CursorUsageMonitor-ARM64EC.zip 2>&1)
             status=$?
             set -e
             printf '%s\n' "$output"
