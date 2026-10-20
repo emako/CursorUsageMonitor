@@ -1,4 +1,4 @@
-name: Release latest preview
+name: Release latest
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: preview-release-latest
+  group: release-latest
   cancel-in-progress: false
 
 jobs:
@@ -95,7 +95,7 @@ jobs:
           unzip -l dist/CursorUsageMonitor-Win32.zip
           unzip -l dist/CursorUsageMonitor-ARM64EC.zip
 
-      - name: Publish preview release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -110,7 +110,7 @@ jobs:
           b='`'
 
           cat > release-notes.md <<EOF
-          由 [${short}](${url}) 自动构建的预览版。
+          由 [${short}](${url}) 自动构建。
 
           | 文件 | 说明 |
           | --- | --- |
@@ -126,8 +126,6 @@ jobs:
             set +e
             output=$(gh release create latest \
               --repo "$GITHUB_REPOSITORY" \
-              --prerelease \
-              --latest=false \
               --title "latest" \
               --target "$GITHUB_SHA" \
               --notes-file release-notes.md \
