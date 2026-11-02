@@ -2,15 +2,20 @@
 
 #include "Text.h"
 
+#include <bcrypt.h>
+#include <dpapi.h>
 #include <shlobj.h>
+#include <wincrypt.h>
 
 #include <algorithm>
+#include <cstring>
 #include <ctime>
 #include <fstream>
 #include <iterator>
 #include <optional>
 #include <set>
 #include <tuple>
+#include <vector>
 
 #include "json.hpp"
 #include "sqlite3.h"
@@ -19,6 +24,8 @@ using json = nlohmann::json;
 
 namespace
 {
+constexpr char kSafeStoragePrefix[] = "cursor-safe-storage:v1:";
+
 std::string Base64UrlDecode(const std::string& in)
 {
     static const std::string table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -86,6 +93,135 @@ std::wstring KnownFolder(REFKNOWNFOLDERID id)
         path = raw;
     CoTaskMemFree(raw);
     return path;
+}
+
+// Standard Base64 via Crypt32 (Chromium safeStorage blobs are not base64url).
+std::vector<BYTE> Base64Decode(const std::string& text)
+{
+    DWORD size = 0;
+    if (!CryptStringToBinaryA(text.c_str(), static_cast<DWORD>(text.size()), CRYPT_STRING_BASE64,
+            nullptr, &size, nullptr, nullptr)
+        || size == 0)
+        return {};
+    std::vector<BYTE> out(size);
+    if (!CryptStringToBinaryA(text.c_str(), static_cast<DWORD>(text.size()), CRYPT_STRING_BASE64,
+            out.data(), &size, nullptr, nullptr))
+        return {};
+    out.resize(size);
+    return out;
+}
+
+std::vector<BYTE> DpapiUnprotect(const BYTE* data, DWORD size)
+{
+    DATA_BLOB in{ size, const_cast<BYTE*>(data) };
+    DATA_BLOB out{};
+    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, 0, &out))
+        return {};
+    std::vector<BYTE> plain(out.pbData, out.pbData + out.cbData);
+    LocalFree(out.pbData);
+    return plain;
+}
+
+// AES key Cursor (Electron/Chromium) keeps in %APPDATA%\Cursor\Local State under os_crypt.encrypted_key.
+std::optional<std::vector<BYTE>> LoadOsCryptKey()
+{
+    const auto roaming = KnownFolder(FOLDERID_RoamingAppData);
+    if (roaming.empty())
+        return std::nullopt;
+    std::ifstream file(roaming + L"\\Cursor\\Local State", std::ios::binary);
+    if (!file)
+        return std::nullopt;
+    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto root = json::parse(content, nullptr, false);
+    if (!root.is_object())
+        return std::nullopt;
+    const auto oscrypt = root.find("os_crypt");
+    if (oscrypt == root.end() || !oscrypt->is_object())
+        return std::nullopt;
+    const auto keyIt = oscrypt->find("encrypted_key");
+    if (keyIt == oscrypt->end() || !keyIt->is_string())
+        return std::nullopt;
+
+    auto blob = Base64Decode(keyIt->get_ref<const std::string&>());
+    static constexpr char kDpapiPrefix[] = "DPAPI";
+    if (blob.size() <= sizeof(kDpapiPrefix) - 1
+        || memcmp(blob.data(), kDpapiPrefix, sizeof(kDpapiPrefix) - 1) != 0)
+        return std::nullopt;
+    auto key = DpapiUnprotect(blob.data() + (sizeof(kDpapiPrefix) - 1),
+        static_cast<DWORD>(blob.size() - (sizeof(kDpapiPrefix) - 1)));
+    return key.size() == 32 ? std::optional(std::move(key)) : std::nullopt;
+}
+
+const std::vector<BYTE>* OsCryptKey()
+{
+    static const auto key = LoadOsCryptKey();
+    return key ? &*key : nullptr;
+}
+
+std::string AesGcmDecrypt(const std::vector<BYTE>& key, const BYTE* nonce, ULONG nonceLen,
+    const BYTE* cipher, ULONG cipherLen, const BYTE* tag, ULONG tagLen)
+{
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    BCRYPT_KEY_HANDLE keyHandle = nullptr;
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0)
+        return {};
+    if (BCryptSetProperty(alg, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(BCRYPT_CHAIN_MODE_GCM)),
+            sizeof(BCRYPT_CHAIN_MODE_GCM), 0)
+        != 0)
+    {
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return {};
+    }
+    if (BCryptGenerateSymmetricKey(alg, &keyHandle, nullptr, 0, const_cast<PUCHAR>(key.data()),
+            static_cast<ULONG>(key.size()), 0)
+        != 0)
+    {
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return {};
+    }
+
+    BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO info;
+    BCRYPT_INIT_AUTH_MODE_INFO(info);
+    info.pbNonce = const_cast<PUCHAR>(nonce);
+    info.cbNonce = nonceLen;
+    info.pbTag = const_cast<PUCHAR>(tag);
+    info.cbTag = tagLen;
+
+    std::string plain(cipherLen, '\0');
+    ULONG plainLen = 0;
+    const NTSTATUS status = BCryptDecrypt(keyHandle, const_cast<PUCHAR>(cipher), cipherLen, &info, nullptr, 0,
+        reinterpret_cast<PUCHAR>(plain.data()), static_cast<ULONG>(plain.size()), &plainLen, 0);
+
+    BCryptDestroyKey(keyHandle);
+    BCryptCloseAlgorithmProvider(alg, 0);
+    if (status != 0)
+        return {};
+    plain.resize(plainLen);
+    return plain;
+}
+
+// Cursor 3.27+ may seal tokens as cursor-safe-storage:v1: + base64(v10||nonce||cipher||tag).
+// Older builds still store a bare JWT. Returns empty when sealed and decrypt fails.
+std::string UnwrapAccessToken(const std::string& stored)
+{
+    const auto text = Trim(stored);
+    if (text.size() < sizeof(kSafeStoragePrefix) - 1
+        || text.compare(0, sizeof(kSafeStoragePrefix) - 1, kSafeStoragePrefix) != 0)
+        return text;
+
+    const auto* key = OsCryptKey();
+    if (!key)
+        return {};
+    auto blob = Base64Decode(text.substr(sizeof(kSafeStoragePrefix) - 1));
+    // Chromium OSCrypt v10 on Windows: "v10" + 12-byte nonce + ciphertext + 16-byte tag.
+    constexpr size_t kPrefix = 3, kNonce = 12, kTag = 16;
+    if (blob.size() < kPrefix + kNonce + kTag || memcmp(blob.data(), "v10", kPrefix) != 0)
+        return {};
+    const BYTE* nonce = blob.data() + kPrefix;
+    const ULONG cipherLen = static_cast<ULONG>(blob.size() - kPrefix - kNonce - kTag);
+    const BYTE* cipher = blob.data() + kPrefix + kNonce;
+    const BYTE* tag = blob.data() + blob.size() - kTag;
+    return AesGcmDecrypt(*key, nonce, kNonce, cipher, cipherLen, tag, kTag);
 }
 
 std::vector<std::wstring> ExistingUnique(const std::vector<std::wstring>& paths)
@@ -267,7 +403,7 @@ std::optional<AuthSession> FromStateVscdb(const std::wstring& path)
     Vscdb db(path);
     if (!db)
         return std::nullopt;
-    const auto token = db.Get("cursorAuth/accessToken");
+    const auto token = UnwrapAccessToken(db.Get("cursorAuth/accessToken"));
     if (token.empty() || !LooksLikeJwt(token))
         return std::nullopt;
 
@@ -300,7 +436,7 @@ std::optional<AuthSession> FromAuthJson(const std::wstring& path)
     const auto root = json::parse(content, nullptr, false);
     if (!root.is_object())
         return std::nullopt;
-    const auto token = FirstString(root, { "accessToken", "access_token", "token" });
+    const auto token = UnwrapAccessToken(FirstString(root, { "accessToken", "access_token", "token" }));
     if (token.empty() || !LooksLikeJwt(token))
         return std::nullopt;
 

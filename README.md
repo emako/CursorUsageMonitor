@@ -52,7 +52,7 @@
 
 1. 找登录态（只看当前 Windows 用户），顺序同 `SessionDiscoverer`：
    - 环境变量 `CURSOR_SESSION_TOKEN` / `WORKOS_CURSOR_SESSION_TOKEN`（支持 `sub::jwt`、`sub%3A%3Ajwt`）
-   - `%APPDATA%\Cursor\User\globalStorage\state.vscdb`（及 `.backup`），内嵌 SQLite 以 `mode=ro&immutable=1` 只读打开，读 `cursorAuth/accessToken` 等
+   - `%APPDATA%\Cursor\User\globalStorage\state.vscdb`（及 `.backup`），内嵌 SQLite 以 `mode=ro&immutable=1` 只读打开，读 `cursorAuth/accessToken` 等；若值为 `cursor-safe-storage:v1:` 密文，则用 `%APPDATA%\Cursor\Local State` 里 DPAPI 保护的 `os_crypt.encrypted_key` 按 Chromium `v10` AES-256-GCM 解出 JWT
    - `~\.cursor\auth.json` 等 CLI auth 文件
    - 按 `glass.lastSignedInAuthId` 优先当前登录账号，跳过已过期的 JWT
 2. 拼 Cookie `WorkosCursorSessionToken=<sub>%3A%3A<jwt>`。

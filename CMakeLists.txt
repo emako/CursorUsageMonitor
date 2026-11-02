@@ -51,6 +51,8 @@ target_link_libraries(CursorUsageMonitor PRIVATE
     user32
     gdi32
     advapi32
+    crypt32
+    bcrypt
     dwmapi
     uxtheme
     gdiplus
