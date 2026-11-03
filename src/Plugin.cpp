@@ -143,6 +143,51 @@ OptionsDialogState* DialogState(HWND dialog)
     return reinterpret_cast<OptionsDialogState*>(GetWindowLongPtrW(dialog, DWLP_USER));
 }
 
+// Place the interval edit immediately after the label text instead of far-right padding.
+void LayoutIntervalRow(HWND dialog)
+{
+    const HWND label = GetDlgItem(dialog, IDC_INTERVAL_LABEL);
+    const HWND edit = GetDlgItem(dialog, IDC_INTERVAL);
+    if (!label || !edit)
+        return;
+
+    wchar_t text[256]{};
+    GetWindowTextW(label, text, 256);
+
+    const HDC dc = GetDC(label);
+    if (!dc)
+        return;
+    const auto font = reinterpret_cast<HFONT>(SendMessageW(label, WM_GETFONT, 0, 0));
+    const HGDIOBJ old = font ? SelectObject(dc, font) : nullptr;
+    SIZE size{};
+    GetTextExtentPoint32W(dc, text, static_cast<int>(wcslen(text)), &size);
+    if (old)
+        SelectObject(dc, old);
+    ReleaseDC(label, dc);
+
+    RECT labelRect{}, editRect{}, client{};
+    GetWindowRect(label, &labelRect);
+    GetWindowRect(edit, &editRect);
+    GetClientRect(dialog, &client);
+    MapWindowPoints(HWND_DESKTOP, dialog, reinterpret_cast<POINT*>(&labelRect), 2);
+    MapWindowPoints(HWND_DESKTOP, dialog, reinterpret_cast<POINT*>(&editRect), 2);
+
+    const int margin = labelRect.left;
+    const int gap = std::max(4, MulDiv(6, static_cast<int>(GetDpiForWindow(dialog)), 96));
+    const int editWidth = editRect.right - editRect.left;
+    const int editHeight = editRect.bottom - editRect.top;
+    const int labelHeight = labelRect.bottom - labelRect.top;
+    const int labelWidth = size.cx + 2;
+    int editLeft = labelRect.left + labelWidth + gap;
+    if (editLeft + editWidth > client.right - margin)
+        editLeft = std::max(labelRect.left, client.right - margin - editWidth);
+
+    SetWindowPos(label, nullptr, labelRect.left, labelRect.top, labelWidth, labelHeight,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(edit, nullptr, editLeft, editRect.top, editWidth, editHeight,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -181,6 +226,7 @@ INT_PTR CALLBACK OptionsDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
         SendDlgItemMessageW(hDlg, IDC_INTERVAL, EM_LIMITTEXT, 4, 0);
         SetOptionsIcon(hDlg, *state);
         Theme::ApplyFont(hDlg, state->theme, state->text ? state->text->font : nullptr);
+        LayoutIntervalRow(hDlg);
         if (state->themed)
             PostMessageW(hDlg, Theme::kApplyFrameMessage, 0, 0);
         return TRUE;
